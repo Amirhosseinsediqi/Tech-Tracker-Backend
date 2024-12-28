@@ -1,0 +1,5 @@
+{
+  "watch": ["./"],
+  "ignore": ["node_modules/**", "data/**", ".git/**"],
+  "legacyWatch": true
+}
