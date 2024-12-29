@@ -75,12 +75,44 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// MongoDB connection configuration
+const mongoOptions = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  family: 4,
+  keepAlive: true,
+  keepAliveInitialDelay: 300000
+};
+
+mongoose.connect("mongodb://mongodb:27017/meetings", mongoOptions)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+mongoose.connection.on('error', err => {
+  console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected. Attempting to reconnect...');
+  setTimeout(() => {
+    mongoose.connect("mongodb://mongodb:27017/meetings", mongoOptions);
+  }, 5000);
+});
+
 // Session configuration
 app.use(
   session({
     store: MongoStore.create({
       mongoUrl: "mongodb://mongodb:27017/meetings",
       collectionName: "sessions",
+      ttl: 60 * 60 * 24 * 14, // 14 days
+      autoRemove: 'native',
+      touchAfter: 24 * 3600, // 24 hours
+      crypto: {
+        secret: process.env.SESSION_SECRET
+      }
     }),
     secret: process.env.SESSION_SECRET,
     name: "Teach-Track",
@@ -89,7 +121,7 @@ app.use(
     cookie: {
       secure: false,
       httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 365 * 10,
+      maxAge: 1000 * 60 * 60 * 24 * 14 // 14 days
     },
   })
 );
@@ -203,11 +235,6 @@ app.use(express.urlencoded({ extended: false }));
 app.options("*", cors());
 
 app.use("/auth", require("./routes/api/auth"));
-
-mongoose
-  .connect("mongodb://mongodb:27017/meetings")
-  .then(() => console.log("mongodb is Connected"))
-  .catch((error) => console.log("Error connecting to MongoDB:", error));
 
 const meetingSchema = new mongoose.Schema({
   id: {
