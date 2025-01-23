@@ -4,12 +4,15 @@ FROM node:16-alpine AS base
 # Set the working directory
 WORKDIR /app
 
+# Install required packages
+RUN apk add --no-cache wget bash
+
 # Copy package files and node_modules
 COPY package*.json ./
 COPY node_modules ./node_modules
 
 # Expose the port
-EXPOSE 5500
+EXPOSE 5501
 
 # Production stage
 FROM base AS production

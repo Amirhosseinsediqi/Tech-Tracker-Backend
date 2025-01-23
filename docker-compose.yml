@@ -19,15 +19,17 @@ services:
   mongodb:
     image: mongo:latest
     container_name: mongodb
-    command: ["mongod", "--config", "/etc/mongod.conf"]
+    command: mongod --config /etc/mongod.conf
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
       - ./mongod.conf:/etc/mongod.conf:ro
+      - mongodb_logs:/var/log/mongodb
     environment:
-      - MONGODB_INITDB_DATABASE=meetings
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
     deploy:
       resources:
         limits:
@@ -37,86 +39,119 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: mongosh --eval "db.adminCommand('ping')"
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 30s
     restart: unless-stopped
-
 
   dev:
     build:
-      context: ./ 
+      context: ./
       target: dev
     ports:
       - "5502:5501"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: npm run dev
     environment:
-      - NODE_ENV=production
-      - REDIS_URL=redis://redis:6379
-      - MONGODB_URI=mongodb://mongodb:27017/meetings
+      - NODE_ENV=development
+      - PORT=5501
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=${REDIS_URI}
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/meetings?authSource=admin
       - SESSION_SECRET=${SESSION_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - ZOOM_ACCOUNT_ID=${ZOOM_ACCOUNT_ID}
+      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+      - ZOOM_WEBHOOK_SECRET_TOKEN=${ZOOM_WEBHOOK_SECRET_TOKEN}
+      - ZOOM_API_URL=${ZOOM_API_URL}
+      - EMAIL_USER=${EMAIL_USER}
+      - SPREADSHEET_NAME=${SPREADSHEET_NAME}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - BACKEND_URL=${BACKEND_URL}
     depends_on:
       redis:
         condition: service_healthy
       mongodb:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:5501/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: always
-    stop_grace_period: 120s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
     networks:
       - app-network
 
   prod:
     build:
-      context: ./
+      context: ./ 
       target: production
     container_name: backend-prod
     ports:
       - "5501:5501"
     environment:
-      NODE_ENV: production
-      MONGO_URL: mongodb://mongodb:27017/meetings
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET}
-      ZOOM_ACCOUNT_ID: ${ZOOM_ACCOUNT_ID}
-      ZOOM_CLIENT_ID: ${ZOOM_CLIENT_ID}
-      ZOOM_CLIENT_SECRET: ${ZOOM_CLIENT_SECRET}
-      ZOOM_WEBHOOK_SECRET_TOKEN: ${ZOOM_WEBHOOK_SECRET_TOKEN}
-      ZOOM_API_URL: ${ZOOM_API_URL}
-      EMAIL_USER: ${EMAIL_USER}
-      SPREADSHEET_NAME: ${SPREADSHEET_NAME}
-      FRONTEND_URL: ${FRONTEND_URL}
-      BACKEND_URL: ${BACKEND_URL}
-      REDIS_URL: redis://redis:6379
-      MONGODB_URI: mongodb://mongodb:27017/meetings
+      - NODE_ENV=production
+      - PORT=5501
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=${REDIS_URI}
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/meetings?authSource=admin
+      - SESSION_SECRET=${SESSION_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - ZOOM_ACCOUNT_ID=${ZOOM_ACCOUNT_ID}
+      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+      - ZOOM_WEBHOOK_SECRET_TOKEN=${ZOOM_WEBHOOK_SECRET_TOKEN}
+      - ZOOM_API_URL=${ZOOM_API_URL}
+      - EMAIL_USER=${EMAIL_USER}
+      - SPREADSHEET_NAME=${SPREADSHEET_NAME}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - BACKEND_URL=${BACKEND_URL}
     depends_on:
-      - redis
-      - mongodb
-    restart: unless-stopped
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:5501/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: always
     networks:
       - app-network
 
-
 volumes:
   redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /home/ubuntu/backend/data/redis
+      o: bind
   mongodb_data:
     driver: local
+    driver_opts:
+      type: none
+      device: /home/ubuntu/backend/data/mongodb
+      o: bind
   mongodb_config:
     driver: local
+    driver_opts:
+      type: none
+      device: /home/ubuntu/backend/data/mongodb_config
+      o: bind
+  mongodb_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: /home/ubuntu/backend/data/mongodb_logs
+      o: bind
 
 networks:
   app-network:

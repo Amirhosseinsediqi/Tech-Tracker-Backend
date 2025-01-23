@@ -1,25 +1,25 @@
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const bodyParser = require("body-parser");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const session = require("express-session");
 const MongoStore = require("connect-mongo");
-const mongoose = require("mongoose");
+const passport = require("passport");
+const axios = require("axios");
+const cors = require("cors");
+const User = require("./models/User");
+const handleMeetingParticipantsReport = require("./routes/api/handleMeetingParticipantsReport");
+const { Meeting, getMeetingDetailsFromDB } = require("./utils/meetingHelper");
 const qs = require("qs");
 const { debug } = require("node:console");
-const axios = require("axios");
-const passport = require("passport");
 const moment = require("moment");
 const RedisStore = require("connect-redis").default;
 const redis = require("./configs/redis");
-
-const handleMeetingParticipantsReport = require("./routes/api/handleMeetingParticipantsReport");
-const { tokenCheck } = require("./middlewares/tokenCheck");
 const { google } = require("googleapis");
 const { type } = require("node:os");
-const User = require("./models/User");
+const AuthTracker = require('./models/AuthTracker');
 const { brotliCompress } = require("node:zlib");
 const ZOOM_OAUTH_ENDPOINT = "https://zoom.us/oauth/token";
 const ZOOM_OAUTH_ENDPOINT_USER = "https://zoom.us/oauth/authorize";
@@ -30,10 +30,101 @@ const bcrypt = require("bcryptjs");
 const { getAuthenticatedClient } = require("./auth/googleAuth");
 
 const app = express();
-const clients = new Set();
+
+// Middleware setup
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['x-session-id']
+}));
+
+app.set('trust proxy', 1);
+
+// Session configuration
+app.use(
+  session({
+    name: "session",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI,
+      ttl: 24 * 60 * 60, // 1 day
+      autoRemove: 'native',
+      touchAfter: 24 * 3600 // Only update session once per day unless data changes
+    }),
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 1 day
+    }
+  })
+);
+
+// Initialize Passport and restore authentication state from session
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Passport serialization
+passport.serializeUser((user, done) => {
+  console.log("Serializing user:", user._id);
+  done(null, user._id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  console.log("Deserializing user ID:", id);
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    console.error("Error deserializing user:", err);
+    done(err, null);
+  }
+});
+
+// Debug middleware - log all requests
+app.use((req, res, next) => {
+  // console.log('Request Debug:', {
+  //   url: req.url,
+  //   method: req.method,
+  //   headers: req.headers,
+  //   cookies: req.cookies,
+  //   sessionID: req.sessionID,
+  //   session: req.session,
+  //   user: req.user
+  // });
+  next();
+});
+
+// Basic routes
+app.get("/", (req, res) => {
+  res.json({
+    status: "success",
+    message: "Tech Track API is running",
+    version: "1.0.0",
+    endpoints: [
+      "/auth/google",
+      "/auth/zoom",
+      "/meetings",
+      "/webhook"
+    ]
+  });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "healthy" });
+});
 
 // Create HTTP server first
-const server = app.listen(PORT, () =>
+const server = app.listen(PORT, '0.0.0.0', () =>
   console.log(`Listening on port ${PORT}!`)
 );
 
@@ -63,68 +154,47 @@ const connectWithRetry = async (attempt = 1) => {
   }
 };
 
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL,
-    methods: ["GET", "POST", "DELETE", "PUT"],
-    credentials: true,
-  })
-);
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(cookieParser());
-
 // MongoDB connection configuration
 const mongoOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
-  family: 4,
-  keepAlive: true,
-  keepAliveInitialDelay: 300000
+  connectTimeoutMS: 30000,
+  heartbeatFrequencyMS: 10000
 };
 
-mongoose.connect("mongodb://mongodb:27017/meetings", mongoOptions)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MongoDB with retry mechanism
+const connectToMongoDB = async (retryCount = 0, maxRetries = 5) => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
+    console.log('Connected to MongoDB successfully');
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    if (retryCount < maxRetries) {
+      const delay = Math.min((retryCount + 1) * 5000, 30000);
+      console.log(`Retrying connection in ${delay/1000} seconds... (Attempt ${retryCount + 1}/${maxRetries})`);
+      setTimeout(() => connectToMongoDB(retryCount + 1, maxRetries), delay);
+    }
+  }
+};
 
+// Handle MongoDB connection events
 mongoose.connection.on('error', err => {
   console.error('MongoDB connection error:', err);
 });
 
 mongoose.connection.on('disconnected', () => {
   console.log('MongoDB disconnected. Attempting to reconnect...');
-  setTimeout(() => {
-    mongoose.connect("mongodb://mongodb:27017/meetings", mongoOptions);
-  }, 5000);
+  connectToMongoDB();
 });
 
-// Session configuration
-app.use(
-  session({
-    store: MongoStore.create({
-      mongoUrl: "mongodb://mongodb:27017/meetings",
-      collectionName: "sessions",
-      ttl: 60 * 60 * 24 * 14, // 14 days
-      autoRemove: 'native',
-      touchAfter: 24 * 3600, // 24 hours
-      crypto: {
-        secret: process.env.SESSION_SECRET
-      }
-    }),
-    secret: process.env.SESSION_SECRET,
-    name: "Teach-Track",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: false,
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 14 // 14 days
-    },
-  })
-);
+mongoose.connection.on('connected', () => {
+  console.log('MongoDB connected');
+});
+
+// Initial connection
+connectToMongoDB();
 
 // Google OAuth Strategy
 passport.use(
@@ -138,46 +208,40 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
+        console.log("Google OAuth callback received", { profile });
+        
+        // First try to find user by googleId
         let user = await User.findOne({ googleId: profile.id });
-
+        
         if (!user) {
-          user = new User({
-            googleId: profile.id,
-            email: profile.emails[0].value,
-            name: profile.displayName,
-          });
+          // If not found by googleId, try to find by email
+          user = await User.findOne({ email: profile.emails[0].value });
+          
+          if (user) {
+            // Update existing user with Google credentials
+            user.googleId = profile.id;
+            user.accessToken = accessToken;
+            user.refreshToken = refreshToken;
+          } else {
+            // Create new user
+            user = new User({
+              googleId: profile.id,
+              email: profile.emails[0].value,
+              name: profile.displayName,
+              accessToken,
+              refreshToken
+            });
+          }
+          await user.save();
         }
-
-        // Update tokens
-        user.accessToken = accessToken;
-        user.refreshToken = refreshToken;
-
-        await user.save();
-
-        return done(null, user, { accessToken, refreshToken });
-      } catch (error) {
-        return done(error, null);
+        
+        return done(null, user);
+      } catch (err) {
+        return done(err, null);
       }
     }
   )
 );
-
-// Passport serialization
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await User.findById(id);
-    done(null, user);
-  } catch (error) {
-    done(error, null);
-  }
-});
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 connectWithRetry();
 
@@ -185,8 +249,6 @@ connectWithRetry();
 // redis.on("error", (err) => console.error("Redis error:", err));
 
 // setTimeout(() => connectWithRetry(1), 3000);
-
-app.use(express.json());
 
 const isAuthenticated = (req, res, next) => {
   if (!req.session.userId) {
@@ -200,149 +262,100 @@ app.use((req, res, next) => {
   next();
 });
 
-app.post("/auth/logout", (req, res) => {
+app.post("/auth/logout", async (req, res) => {
   try {
+    console.log('Logout request received:', {
+      session: req.session,
+      sessionID: req.sessionID,
+      user: req.user
+    });
+
     if (!req.session) {
       return res.status(200).json({ message: "Already logged out" });
     }
 
-    // Destroy the session
-    req.session.destroy((err) => {
-      if (err) {
-        console.error("Error destroying session:", err);
-        return res.status(500).json({ error: "Failed to logout" });
-      }
-      ظ;
-
-      // Clear the session cookie
-      res.clearCookie("tech-trach", {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-        path: "/",
+    // Store user info before destroying session
+    const userId = req.session.userId;
+    const user = await User.findById(userId);
+    
+    if (user) {
+      // Track the logout event
+      await AuthTracker.create({
+        userId: user._id,
+        email: user.email,
+        eventType: 'logout',
+        authProvider: user.googleId ? 'google' : (user.zoomUserId ? 'zoom' : 'email'),
+        previousState: {
+          googleId: user.googleId,
+          zoomUserId: user.zoomUserId,
+          accessToken: user.accessToken,
+          refreshToken: user.refreshToken,
+          spreadsheetId: user.spreadsheetId
+        },
+        success: true
       });
+    }
 
-      res.status(200).json({ message: "Logged out successfully" });
+    // Destroy the session
+    await new Promise((resolve, reject) => {
+      req.session.destroy((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
+
+    // Clear the session cookie
+    res.clearCookie("session", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      domain: '.rubikamp.org',
+      path: "/"
+    });
+
+    // Update user's last logout time
+    if (user) {
+      await User.findByIdAndUpdate(user._id, {
+        lastLogout: new Date()
+      }).catch(err => {
+        console.error('Error updating user logout time:', err);
+        // Track the error
+        AuthTracker.create({
+          userId: user._id,
+          email: user.email,
+          eventType: 'logout',
+          authProvider: user.googleId ? 'google' : (user.zoomUserId ? 'zoom' : 'email'),
+          success: false,
+          errorMessage: err.message
+        }).catch(e => console.error('Error creating auth tracker:', e));
+      });
+    }
+
+    res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Error during logout:", error);
+    
+    // Track the error if we have user information
+    if (req.user) {
+      AuthTracker.create({
+        userId: req.user._id,
+        email: req.user.email,
+        eventType: 'logout',
+        authProvider: req.user.googleId ? 'google' : (req.user.zoomUserId ? 'zoom' : 'email'),
+        success: false,
+        errorMessage: error.message
+      }).catch(e => console.error('Error creating auth tracker:', e));
+    }
+    
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}); 
 
 app.use(express.urlencoded({ extended: false }));
 
 app.options("*", cors());
 
 app.use("/auth", require("./routes/api/auth"));
-
-const meetingSchema = new mongoose.Schema({
-  id: {
-    type: Number,
-    required: true,
-    unique: true,
-  },
-  name: {
-    type: String,
-    required: true,
-  },
-  delayPercentage: {
-    type: Number,
-    required: true,
-    min: 0,
-    max: 100,
-  },
-  allowTime: {
-    type: Number,
-    required: true,
-    min: 0,
-    max: 20,
-  },
-});
-
-const userSchema = new mongoose.Schema({
-  googleId: { type: String, required: false, unique: true },
-  username: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  accessToken: { type: String },
-  refreshToken: { type: String },
-  spreadsheetId: { type: String },
-  zoomUserId: { type: String },
-});
-
-const Meeting =
-  mongoose.models.Meeting || mongoose.model("Meeting", meetingSchema);
-
-const getMeetingDetailsFromDB = async (id) => {
-  try {
-    console.log("Meeting ID to fetch: ", id);
-    const meetingDetails = await Meeting.findOne({ id: Number(id) }).exec();
-    console.log("from meetinghelper: ", meetingDetails);
-
-    if (!meetingDetails) {
-      throw new Error(`Meeting with ID ${id} not found`);
-    }
-    return meetingDetails;
-  } catch (error) {
-    console.error(`Error fetching meeting details: ${error.message}`);
-    throw error;
-  }
-};
-
-// redirecturl
-const getToken = async (code, user) => {
-  try {
-    console.log("Exchanging authorization code for token");
-
-    const tokenResponse = await axios.post(
-      "https://zoom.us/oauth/token",
-      null,
-      {
-        params: {
-          grant_type: "authorization_code",
-          code: code,
-          redirect_uri: process.env.ZOOM_REDIRECT_URL,
-        },
-        headers: {
-          Authorization: `Basic ${Buffer.from(
-            `${process.env.ZOOM_CLIENT_ID}:${process.env.ZOOM_CLIENT_SECRET}`
-          ).toString("base64")}`,
-        },
-      }
-    );
-
-    if (!tokenResponse.data.access_token) {
-      throw new Error("No access token in response");
-    }
-
-    // Get user info
-    const userResponse = await axios.get("https://api.zoom.us/v2/users/me", {
-      headers: {
-        Authorization: `Bearer ${tokenResponse.data.access_token}`,
-      },
-    });
-
-    // Update user with Zoom info
-    user.zoomUserId = userResponse.data.id;
-    user.zoomAccessToken = tokenResponse.data.access_token;
-    user.zoomRefreshToken = tokenResponse.data.refresh_token;
-    user.zoomTokenExpiration = new Date(
-      Date.now() + tokenResponse.data.expires_in * 1000
-    );
-
-    await user.save();
-    console.log("Initial token exchange successful for user:", user._id);
-
-    return tokenResponse.data.access_token;
-  } catch (error) {
-    console.error(
-      "Error in token exchange:",
-      error.response?.data || error.message
-    );
-    throw error;
-  }
-};
 
 app.post("/", async (req, res) => {
   console.log("Hello My creator");
@@ -353,7 +366,7 @@ const refreshZoomToken = async (user) => {
   try {
     console.log("Attempting to refresh Zoom token for user:", user._id);
 
-    if (!user.zoomRefreshToken) {
+    if (!user.zoom?.refreshToken) {
       throw new Error("No refresh token available");
     }
 
@@ -363,7 +376,7 @@ const refreshZoomToken = async (user) => {
       {
         params: {
           grant_type: "refresh_token",
-          refresh_token: user.zoomRefreshToken,
+          refresh_token: user.zoom.refreshToken,
         },
         headers: {
           Authorization: `Basic ${Buffer.from(
@@ -378,9 +391,9 @@ const refreshZoomToken = async (user) => {
     }
 
     // save tokens in db
-    user.zoomAccessToken = tokenResponse.data.access_token;
-    user.zoomRefreshToken = tokenResponse.data.refresh_token;
-    user.zoomTokenExpiration = new Date(
+    user.zoom.accessToken = tokenResponse.data.access_token;
+    user.zoom.refreshToken = tokenResponse.data.refresh_token;
+    user.zoom.tokenExpiration = new Date(
       Date.now() + tokenResponse.data.expires_in * 1000
     );
 
@@ -391,7 +404,7 @@ const refreshZoomToken = async (user) => {
     try {
       await axios.get("https://api.zoom.us/v2/users/me", {
         headers: {
-          Authorization: `Bearer ${user.zoomAccessToken}`,
+          Authorization: `Bearer ${user.zoom.accessToken}`,
         },
       });
       console.log("Token verified successfully");
@@ -403,7 +416,7 @@ const refreshZoomToken = async (user) => {
       throw new Error("Token verification failed");
     }
 
-    return user.zoomAccessToken;
+    return user.zoom.accessToken;
   } catch (error) {
     console.error(
       "Error refreshing Zoom token:",
@@ -417,13 +430,13 @@ const validateZoomToken = async (user) => {
   try {
     console.log("Validating Zoom token for user:", user._id);
 
-    if (!user.zoomTokenExpiration || !user.zoomAccessToken) {
+    if (!user.zoom.tokenExpiration || !user.zoom.accessToken) {
       console.log("No token or expiration found, refreshing token");
       return await refreshZoomToken(user);
     }
 
     const currentTime = Date.now();
-    const tokenExpirationTime = new Date(user.zoomTokenExpiration).getTime();
+    const tokenExpirationTime = new Date(user.zoom.tokenExpiration).getTime();
 
     // Refresh if token is expired or will expire in the next 5 minutes
     if (currentTime >= tokenExpirationTime - 5 * 60 * 1000) {
@@ -435,7 +448,7 @@ const validateZoomToken = async (user) => {
     try {
       await axios.get("https://api.zoom.us/v2/users/me", {
         headers: {
-          Authorization: `Bearer ${user.zoomAccessToken}`,
+          Authorization: `Bearer ${user.zoom.accessToken}`,
         },
       });
       console.log("Current token verified successfully");
@@ -445,7 +458,7 @@ const validateZoomToken = async (user) => {
     }
 
     console.log("Token is valid and verified");
-    return user.zoomAccessToken;
+    return user.zoom.accessToken;
   } catch (error) {
     console.error("Error validating token:", error);
     throw error;
@@ -479,15 +492,20 @@ app.post("/webhook", async (req, res) => {
         });
       } else if (req.body.event === "meeting.ended") {
         const meetingId = req.body.payload.object.id;
+        const accountId = req.body.payload.account_id;
+        const hostId = req.body.payload.object.host_id;
         const meetingDetails = {
           duration: req.body.payload.object.duration,
           startTime: req.body.payload.object.start_time,
           endTime: req.body.payload.object.end_time,
           topic: req.body.payload.object.topic,
+          accountId: accountId,
+          hostId: hostId
         };
 
         console.log("Meeting ID:", meetingId);
         console.log("Meeting Details:", meetingDetails);
+        console.log("Host ID:", hostId);
 
         // Check if meeting settings already exist
         let meetingSettings = await Meeting.findOne({ id: meetingId });
@@ -496,42 +514,82 @@ app.post("/webhook", async (req, res) => {
         if (!meetingSettings) {
           meetingSettings = new Meeting({
             id: meetingId,
-            name: meetingId.toString(), // Use meeting ID as name
-            delayPercentage: 80, // 80% default
-            allowTime: 10, // 10 minutes default
+            name: meetingDetails.topic || meetingId.toString(),
+            delayPercentage: 80,
+            allowTime: 10,
           });
 
           await meetingSettings.save();
           console.log("Created default meeting settings:", meetingSettings);
         }
 
-        const hostId = req.body.payload.object.host_id;
-        console.log("Host ID:", hostId);
+        // First try to find the host user
+        let user = await User.findOne({
+          'zoom.id': hostId,
+          'zoom.accessToken': { $exists: true }
+        });
 
-        // Find the user based on their Zoom host ID
-        const user = await User.findOne({ zoomUserId: hostId });
+        // If host not found or no token, try to find any user with valid zoom token
         if (!user) {
-          console.error("User not found for host ID:", hostId);
-          return res.status(404).send("User not found");
+          console.log("Host user not found, looking for any user with valid Zoom token");
+          user = await User.findOne({
+            'zoom.accessToken': { $exists: true }
+          });
         }
 
-        // Validate and refresh token if needed
-        const accessToken = await validateZoomToken(user);
-        if (!accessToken) {
-          console.error("Failed to get valid access token");
-          return res.status(400).send("No valid access token available");
+        if (!user) {
+          console.error("No user found with valid Zoom token");
+          return res.status(404).send("No user found with valid Zoom token");
         }
 
-        // Add access token to meeting details
-        console.log("Using Zoom access token:", "***token-hidden***");
-        meetingDetails.accessToken = accessToken;
+        console.log("Found user for API access:", user.zoom.email);
 
-        await handleMeetingParticipantsReport(
-          meetingId,
-          user._id,
-          meetingDetails
-        );
-        res.status(200).send("Webhook received and processed");
+        try {
+          // Validate and refresh token if needed
+          const accessToken = await validateZoomToken(user);
+          if (!accessToken) {
+            console.error("Failed to get valid access token");
+            return res.status(400).send("No valid access token available");
+          }
+
+          // Add access token and account details to meeting details
+          console.log("Using Zoom token from user:", user.zoom.email);
+          meetingDetails.accessToken = accessToken;
+
+          await handleMeetingParticipantsReport(
+            meetingId,
+            user._id,
+            meetingDetails
+          );
+          res.status(200).send("Webhook received and processed");
+        } catch (error) {
+          console.error("Error processing meeting:", error);
+          
+          // If token validation fails, try to find another user with valid token
+          const backupUser = await User.findOne({
+            'zoom.accessToken': { $exists: true },
+            _id: { $ne: user._id }  // Exclude the current user
+          });
+
+          if (backupUser) {
+            console.log("Retrying with backup user:", backupUser.zoom.email);
+            const backupToken = await validateZoomToken(backupUser);
+            if (backupToken) {
+              meetingDetails.accessToken = backupToken;
+              await handleMeetingParticipantsReport(
+                meetingId,
+                backupUser._id,
+                meetingDetails
+              );
+              return res.status(200).send("Webhook processed with backup user");
+            }
+          }
+          
+          // If all attempts fail, return error
+          if (!res.headersSent) {
+            res.status(500).send("Failed to process meeting");
+          }
+        }
       }
     } catch (error) {
       console.error("Error in webhook handling:", error);
@@ -689,7 +747,7 @@ app.get("/api/zoom/meetings", async (req, res) => {
       "https://api.zoom.us/v2/users/me/meetings",
       {
         headers: {
-          Authorization: `Bearer ${user.zoomAccessToken}`,
+          Authorization: `Bearer ${user.zoom.accessToken}`,
         },
       }
     );
@@ -705,50 +763,51 @@ app.get("/api/zoom/meetings", async (req, res) => {
   }
 });
 
-app.get("/api/auth/user/email", isAuthenticated, async (req, res) => {
-  try {
-    const user = await User.findById(req.session.userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+// Google OAuth routes
+app.get(
+  "/auth/google",
+  passport.authenticate("google", {
+    scope: [
+      "profile",
+      "email",
+      "https://www.googleapis.com/auth/spreadsheets",
+    ],
+  })
+);
+
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/getstarted" }),
+  async (req, res) => {
+    try {
+      // Store the user ID in session
+      req.session.userId = req.user._id;
+      
+      // Check if user already has Zoom credentials
+      if (req.user.zoomUserId && req.user.zoomAccessToken) {
+        // If user already has Zoom auth, redirect to dashboard
+        res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+      } else {
+        // If no Zoom auth, redirect to Zoom OAuth
+        const zoomAuthUrl = `${ZOOM_OAUTH_ENDPOINT_USER}?response_type=code&client_id=${
+          process.env.ZOOM_CLIENT_ID
+        }&redirect_uri=${encodeURIComponent(redirecturl)}`;
+        res.redirect(zoomAuthUrl);
+      }
+    } catch (error) {
+      console.error("Error in Google auth callback:", error);
+      res.redirect(`${process.env.FRONTEND_URL}/getstarted?error=auth_failed`);
     }
-    res.json({
-      email: user.email,
-      zoomEmail: user.zoomEmail,
-    });
-  } catch (error) {
-    console.error("Error fetching user email:", error);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
 
-app.get("/api/auth/status", async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    if (!userId) {
-      return res.json({ authenticated: false });
-    }
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.json({ authenticated: false });
-    }
-
-    res.json({
-      authenticated: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-      },
-    });
-  } catch (error) {
-    console.error("Error checking auth status:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    status: 'error',
+    message: 'Something went wrong!'
+  });
 });
 
 const cleanup = async () => {
@@ -763,4 +822,4 @@ const cleanup = async () => {
 process.on("SIGTERM", cleanup);
 process.on("SIGINT", cleanup);
 
-module.exports = { Meeting, getMeetingDetailsFromDB };
+module.exports = { refreshZoomToken, validateZoomToken };

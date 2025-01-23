@@ -12,8 +12,6 @@ const mongoose = require("mongoose");
 const TIMEZONE = "Asia/Tehran";
 const User = require("../../models/User");
 const ProcessedMeeting = require("../../models/ProcessedMeeting");
-const { Meeting, getMeetingDetailsFromDB } = require("../../utils/meetingHelper");
-const { refreshZoomToken, validateZoomToken } = require("../../index.js");
 const downloadJsonDir = "/app/downloads";
 const savedCsvDir = "/app/savedCsv";
 const processedCsvDir = "/app/csvProcessed";
@@ -26,7 +24,26 @@ const meetingSchema = new mongoose.Schema({
   allowTime: Number,
 });
 
-async function findOrCreateSpreadsheet(auth, user) {
+const Meeting =
+  mongoose.models.Meeting || mongoose.model("Meeting", meetingSchema);
+
+const getMeetingDetailsFromDB = async (id) => {
+  try {
+    console.log("Meeting ID to fetch: ", id);
+    const meetingDetails = await Meeting.findOne({ id: Number(id) }).exec();
+    console.log("from meetinghelper: ", meetingDetails);
+
+    if (!meetingDetails) {
+      throw new Error(`Meeting with ID ${id} not found`);
+    }
+    return meetingDetails;
+  } catch (error) {
+    console.error(`Error fetching meeting details: ${error.message}`);
+    throw error;
+  }
+};
+
+async function findOrCreateSpreadsheet(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const drive = google.drive({ version: "v3", auth });
   const maxRetries = 3;
@@ -47,27 +64,25 @@ async function findOrCreateSpreadsheet(auth, user) {
       googleUser ? googleUser.email : "not found"
     );
 
-    if (googleUser && googleUser.settings?.spreadsheetId) {
+    if (googleUser && googleUser.spreadsheetId) {
       console.log(
         "Found spreadsheet ID in Google user document:",
-        googleUser.settings.spreadsheetId
+        googleUser.spreadsheetId
       );
 
       // Verify the spreadsheet still exists and is accessible
       try {
-        const exists = await verifySpreadsheetExists(
-          auth,
-          googleUser.settings.spreadsheetId
-        );
-        if (exists) {
-          console.log("Verified existing spreadsheet is accessible");
-          SPREADSHEET_ID = googleUser.settings.spreadsheetId;
-          return SPREADSHEET_ID;
-        }
-        console.log("Stored spreadsheet no longer exists, creating new one");
+        await sheets.spreadsheets.get({
+          spreadsheetId: googleUser.spreadsheetId,
+        });
+        console.log("Verified existing spreadsheet is accessible");
+        SPREADSHEET_ID = googleUser.spreadsheetId;
+        return SPREADSHEET_ID;
       } catch (error) {
-        console.error("Error verifying spreadsheet:", error);
-        console.log("Creating new spreadsheet due to verification error");
+        console.log(
+          "Stored spreadsheet is no longer accessible:",
+          error.message
+        );
       }
     }
   } catch (error) {
@@ -129,7 +144,7 @@ async function findOrCreateSpreadsheet(auth, user) {
           if (googleUser) {
             await User.findByIdAndUpdate(
               googleUser._id,
-              { $set: { "settings.spreadsheetId": SPREADSHEET_ID } },
+              { $set: { spreadsheetId: SPREADSHEET_ID } },
               { new: true }
             );
             console.log(
@@ -176,7 +191,7 @@ async function findOrCreateSpreadsheet(auth, user) {
         if (googleUser) {
           const user = await User.findByIdAndUpdate(
             googleUser._id,
-            { $set: { "settings.spreadsheetId": SPREADSHEET_ID } },
+            { $set: { spreadsheetId: SPREADSHEET_ID } },
             { new: true }
           );
           console.log(
@@ -217,21 +232,6 @@ async function findOrCreateSpreadsheet(auth, user) {
 
       throw error;
     }
-  }
-}
-
-async function verifySpreadsheetExists(auth, spreadsheetId) {
-  try {
-    const sheets = google.sheets({ version: "v4", auth });
-    await sheets.spreadsheets.get({
-      spreadsheetId: spreadsheetId,
-    });
-    return true;
-  } catch (error) {
-    if (error.code === 404) {
-      return false;
-    }
-    throw error;
   }
 }
 
@@ -487,13 +487,7 @@ function handleRetroactiveAbsences(rows, header, nameIndex, dateIndex) {
   return absencesAdded;
 }
 
-const updateAbsenceCount = async (
-  auth,
-  sheetName,
-  filePath,
-  date,
-  meetingConfig
-) => {
+const updateAbsenceCount = async (auth, sheetName, filePath, date) => {
   const sheets = google.sheets({ version: "v4", auth });
   const range = `${sheetName}!A:ZZ`;
 
@@ -619,49 +613,29 @@ const updateAbsenceCount = async (
     );
 
     if (participant) {
-      // Use the minutes late value calculated in aggregateDurations
-      const minutesLate = participant.minutesLate;
-      console.log(`${participant.name} joined at ${participant.firstJoinTime.format()} - ${minutesLate} minutes after session start`);
-
-      const isLate = minutesLate > (meetingConfig.allowTime || 10);
-      const isAbsent = isLate || participant.attendancePercentage < (meetingConfig.delayPercentage || 70);
-      
-      // Set attendance status
+      // Student attended current session
+      const isAbsent = participant.attendancePercentage < 70;
       rows[nameIndex][dateIndex] = isAbsent ? "1" : "0";
 
-      // Set attendance status and reason
-      let reasons = [];
-      
-      // Check for lateness first
-      if (isLate) {
-        reasons.push(`Late[${minutesLate}min]`);
-      }
-      
-      // Check attendance second
-      if (participant.attendancePercentage < (meetingConfig.delayPercentage || 70)) {
+      // Set attendance status and reason (without percentage)
+      if (isAbsent) {
         if (participant.attendancePercentage === 0) {
-          reasons.push("Did not attend");
+          rows[nameIndex][dateIndex + 1] = "Did not attend";
         } else {
-          reasons.push(`Insufficient attendance`);
+          rows[nameIndex][dateIndex + 1] = "Insufficient attendance";
         }
+      } else {
+        rows[nameIndex][dateIndex + 1] = "Present";
       }
-      
-      // If no reasons (means they were present and on time)
-      if (reasons.length === 0) {
-        reasons.push("Present");
-      }
-      
-      console.log(`Final reasons for ${participant.name}:`, reasons);
-      
-      // Combine all reasons with " - "
-      rows[nameIndex][dateIndex + 1] = reasons.join(" - ");
-      rows[nameIndex][dateIndex + 2] = `${participant.attendancePercentage}%`;
 
+      // Set percentage in the new column
+      rows[nameIndex][dateIndex + 2] =
+        participant.attendancePercentage.toString();
     } else {
       // Expected student did not attend current session
       rows[nameIndex][dateIndex] = "1";
       rows[nameIndex][dateIndex + 1] = "Did not attend";
-      rows[nameIndex][dateIndex + 2] = "0%";
+      rows[nameIndex][dateIndex + 2] = "0";
     }
 
     // Update total absences
@@ -698,8 +672,8 @@ const updateAbsenceCount = async (
       attendanceColumns.forEach((col) => {
         if (col.attendanceIndex !== dateIndex) {
           newRow[col.attendanceIndex] = "0";
-          newRow[col.reasonIndex] = "Not Expected";
-          newRow[col.percentageIndex] = "0%";
+          newRow[col.reasonIndex] = "N/A (Not Expected)";
+          newRow[col.percentageIndex] = "N/A";
         }
       });
 
@@ -708,38 +682,23 @@ const updateAbsenceCount = async (
     }
 
     // Process current session attendance
-    const minutesLate = Math.max(0, participant.data.minutesLate); // Ensure positive minutes
-    const isLate = minutesLate > (meetingConfig.allowTime || 10);
-    const isAbsent = isLate || participant.data.attendancePercentage < (meetingConfig.delayPercentage || 70);
-    
-    // Set attendance status
+    const isAbsent = participant.data.attendancePercentage < 70;
     rows[nameIndex][dateIndex] = isAbsent ? "1" : "0";
 
-    // Set attendance status and reason
-    let reasons = [];
-    
-    // Check for lateness first
-    if (isLate) {
-      reasons.push(`Late[${minutesLate}min]`);
-    }
-    
-    // Check attendance second
-    if (participant.data.attendancePercentage < (meetingConfig.delayPercentage || 70)) {
+    // Set attendance status and reason (without percentage)
+    if (isAbsent) {
       if (participant.data.attendancePercentage === 0) {
-        reasons.push("Did not attend");
+        rows[nameIndex][dateIndex + 1] = "Did not attend";
       } else {
-        reasons.push("Insufficient attendance");
+        rows[nameIndex][dateIndex + 1] = "Insufficient attendance";
       }
+    } else {
+      rows[nameIndex][dateIndex + 1] = "Present";
     }
-    
-    // If no reasons (means they were present and on time)
-    if (reasons.length === 0) {
-      reasons.push("Present");
-    }
-    
-    // Combine all reasons with " - "
-    rows[nameIndex][dateIndex + 1] = reasons.join(" - ");
-    rows[nameIndex][dateIndex + 2] = `${participant.data.attendancePercentage}%`;
+
+    // Set percentage in the new column
+    rows[nameIndex][dateIndex + 2] =
+      participant.data.attendancePercentage.toString();
 
     // Update total absences
     const totalAbsences = attendanceColumns.reduce((sum, col) => {
@@ -801,117 +760,53 @@ function readCsvFile(filePath) {
 }
 
 function aggregateDurations(participants) {
-  let firstJoin = null;
-  let lastLeave = null;
-  const durationMap = new Map();
-  const normalizedNamesMap = new Map();
+  const durationMap = {};
+  const joinTimeMap = {};
+  const normalizedNamesMap = {};
+  let totalMeetingDuration = 0;
 
-  // First pass: find the actual meeting duration
+  // First pass: find the total meeting duration
   participants.forEach((participant) => {
-    const joinTime = momentTimezone.tz(participant["join_time"], TIMEZONE);
-    const leaveTime = momentTimezone.tz(participant["leave_time"], TIMEZONE);
-    
-    if (!firstJoin || joinTime.isBefore(firstJoin)) {
-      firstJoin = joinTime;
-    }
-    if (!lastLeave || leaveTime.isAfter(lastLeave)) {
-      lastLeave = leaveTime;
-    }
+    const duration = parseInt(participant["duration"], 10);
+    totalMeetingDuration = Math.max(totalMeetingDuration, duration);
   });
 
-  // Calculate actual meeting duration in minutes
-  const actualMeetingDuration = lastLeave.diff(firstJoin, 'minutes');
-  console.log(`Actual meeting duration (from first join to last leave): ${actualMeetingDuration} minutes`);
-
-  // Get the first participant's join time to use as session start
-  const firstParticipantJoinTime = momentTimezone.tz(participants[0]["join_time"], TIMEZONE);
-
-  // Process each participant
   participants.forEach((participant) => {
-    const originalName = participant["name"];
-    const normalizedName = normalizeName(originalName);
+    const name = participant["name"];
+    const normalizedName = normalizeName(name);
+    const similarName = findSimilarName(
+      Object.keys(normalizedNamesMap),
+      normalizedName
+    );
+
+    let nameToUse;
+    if (similarName) {
+      nameToUse = normalizedNamesMap[similarName];
+    } else {
+      nameToUse = name;
+      normalizedNamesMap[normalizedName] = name;
+    }
+
     const durationInMinutes = parseInt(participant["duration"], 10);
-    const joinTime = momentTimezone.tz(participant["join_time"], TIMEZONE);
-    
-    // Calculate minutes late based on first participant's join time
-    const minutesLate = participant["name"] === participants[0]["name"] ? 0 : 
-      Math.max(0, joinTime.diff(firstParticipantJoinTime, 'minutes'));
+    const joinTime = moment(participant["join_time"], moment.ISO_8601);
 
-    // Find if this participant already exists under a similar name
-    let existingName = null;
-    for (const [existing] of normalizedNamesMap) {
-      if (findSimilarName([existing], normalizedName)) {
-        existingName = existing;
-        break;
-      }
+    if (!durationMap[name]) {
+      durationMap[name] = 0;
+      joinTimeMap[name] = joinTime;
     }
 
-    // Use existing name or create new entry
-    const nameToUse = existingName || normalizedName;
-    
-    // If this is a new name, initialize the map entries
-    if (!normalizedNamesMap.has(nameToUse)) {
-      normalizedNamesMap.set(nameToUse, originalName);
-      durationMap.set(nameToUse, {
-        originalName,
-        duration: 0,
-        firstJoinTime: joinTime,
-        minutesLate: minutesLate,
-        sessions: []
-      });
-    }
-
-    // Get the existing data
-    const participantData = durationMap.get(nameToUse);
-
-    // Update the data
-    participantData.duration += durationInMinutes;
-    participantData.sessions.push({
-      joinTime,
-      duration: durationInMinutes,
-      minutesLate
-    });
-
-    // Keep the earliest join time and its corresponding minutesLate
-    if (joinTime.isBefore(participantData.firstJoinTime)) {
-      participantData.firstJoinTime = joinTime;
-      participantData.minutesLate = minutesLate;
-    }
-
-    console.log(`Processing ${originalName} (as ${nameToUse}): {
-      duration: ${durationInMinutes},
-      totalDuration: ${participantData.duration},
-      joinTime: ${joinTime.format()},
-      minutesLate: ${minutesLate},
-      sessions: ${participantData.sessions.length}
-    }`);
+    durationMap[name] += durationInMinutes;
+    joinTimeMap[name] = moment.min(joinTimeMap[name], joinTime);
   });
 
-  // Convert the map to the required output format
-  return Array.from(durationMap.entries()).map(([normalizedName, data]) => {
-    // Calculate attendance percentage based on actual meeting duration
-    const attendancePercentage = Math.min(100, Math.round(
-      (data.duration / actualMeetingDuration) * 100
-    ));
-
-    console.log(`${data.originalName} final calculations: {
-      normalizedName: ${normalizedName},
-      duration: ${data.duration},
-      actualMeetingDuration: ${actualMeetingDuration},
-      attendancePercentage: ${attendancePercentage},
-      minutesLate: ${data.minutesLate},
-      sessions: ${data.sessions.length}
-    }`);
-
-    return {
-      name: data.originalName,
-      duration: data.duration,
-      firstJoinTime: data.firstJoinTime,
-      attendancePercentage,
-      minutesLate: data.minutesLate,
-      isLate: data.minutesLate > 10
-    };
-  });
+  return Object.keys(durationMap).map((name) => ({
+    name,
+    duration: durationMap[name],
+    firstJoinTime: joinTimeMap[name],
+    attendancePercentage: Math.round(
+      (durationMap[name] / totalMeetingDuration) * 100
+    ),
+  }));
 }
 
 async function processZoomParticipation(
@@ -937,18 +832,15 @@ async function processZoomParticipation(
 
     // Process participants
     const processedParticipants = participants.map((participant) => {
-      const joinTime = momentTimezone.tz(participant["join_time"], TIMEZONE);
-      const firstParticipantTime = momentTimezone.tz(
-        participants[0].join_time,
+      const joinTime = momentTimezone.tz(participant.join_time, TIMEZONE);
+      const meetingStartTime = momentTimezone.tz(
+        participant.join_time,
         TIMEZONE
+      ); // Use first join as meeting start
+      const duration = Math.round(participant.duration / 60);
+      const lateEntry = joinTime.isAfter(
+        meetingStartTime.add(meetingConfig.allowTime, "minutes")
       );
-      const duration = Math.round(participant.duration / 60); // Convert to minutes
-      
-      // Calculate minutes late
-      const minutesLate = participant.name === participants[0].name ? 0 : 
-        Math.max(0, joinTime.diff(firstParticipantTime, 'minutes'));
-
-      console.log(`${participant.name} joined at ${joinTime.format()} - ${minutesLate} minutes after session start`);
 
       return {
         id: participant.id,
@@ -956,11 +848,9 @@ async function processZoomParticipation(
         user_email: participant.user_email || "",
         join_time: participant.join_time,
         leave_time: participant.leave_time,
-        duration: duration.toString(),
+        duration: duration,
         Status: duration > 0 ? "Present" : "Absent",
-        minutesLate: minutesLate.toString(),
-        isLate: minutesLate > (meetingConfig.allowTime || 10),
-        attendancePercentage: Math.round((duration / Math.max(1, rawData.duration)) * 100)
+        lateEntry: lateEntry ? "Yes" : "No",
       };
     });
 
@@ -977,9 +867,7 @@ async function processZoomParticipation(
       "leave_time",
       "duration",
       "Status",
-      "minutesLate",
-      "isLate",
-      "attendancePercentage"
+      "lateEntry",
     ];
     const json2csvParser = new Parser({ fields });
     const csv = json2csvParser.parse(processedParticipants);
@@ -1025,7 +913,7 @@ async function refreshGoogleToken(oauth2Client, user) {
     formData.append("client_id", process.env.GOOGLE_CLIENT_ID);
     formData.append("client_secret", process.env.GOOGLE_CLIENT_SECRET);
     formData.append("grant_type", "refresh_token");
-    formData.append("refresh_token", user.google.refreshToken);
+    formData.append("refresh_token", user.refreshToken);
 
     const response = await axios.post(
       "https://oauth2.googleapis.com/token",
@@ -1040,16 +928,16 @@ async function refreshGoogleToken(oauth2Client, user) {
     const { access_token, refresh_token } = response.data;
 
     // Update user's tokens in database
-    user.google.accessToken = access_token;
+    user.accessToken = access_token;
     if (refresh_token) {
-      user.google.refreshToken = refresh_token;
+      user.refreshToken = refresh_token;
     }
     await user.save();
 
     // Update oauth client
     oauth2Client.setCredentials({
       access_token: access_token,
-      refresh_token: user.google.refreshToken,
+      refresh_token: user.refreshToken,
     });
 
     return true;
@@ -1070,28 +958,14 @@ async function handleMeetingParticipantsReport(
   try {
     // First get the participants data to check duration
     console.log("Fetching participants for meeting:", meetingId);
-    console.log("Meeting details:", {
-      meetingId,
-      userId,
-      accountId: meetingDetails.accountId,
-      hostId: meetingDetails.hostId
-    });
-
     const participantsUrl = `${process.env.ZOOM_API_URL}/past_meetings/${meetingId}/participants`;
     console.log("Requesting participants from URL:", participantsUrl);
-
-    // Add account_id to query params if it's a subaccount
-    const params = {};
-    if (meetingDetails.accountId) {
-      params.account_id = meetingDetails.accountId;
-    }
 
     const participantsResponse = await axios.get(participantsUrl, {
       headers: {
         Authorization: `Bearer ${meetingDetails.accessToken}`,
         "Content-Type": "application/json",
       },
-      params: params
     });
 
     if (!participantsResponse.data || !participantsResponse.data.participants) {
@@ -1101,10 +975,6 @@ async function handleMeetingParticipantsReport(
       );
       throw new Error("Invalid response from Zoom API");
     }
-
-    // Log the response for debugging
-    console.log("Zoom API Response Headers:", participantsResponse.headers);
-    console.log("Number of participants:", participantsResponse.data.participants.length);
 
     const participants = participantsResponse.data.participants;
     if (participants.length === 0) {
@@ -1125,41 +995,35 @@ async function handleMeetingParticipantsReport(
       (meetingEnd - meetingStart) / (60 * 1000)
     );
 
-    // Check if meeting was already processed within a window of the meeting's end time
-    const meetingEndTime = new Date(meetingDetails.endTime);
+    // Check if meeting was already processed, considering time and previous status
     const existingProcessing = await ProcessedMeeting.findOne({
       meetingId,
-      $or: [
-        // Check if processed within 10 minutes of meeting end
-        {
-          processedAt: {
-            $gte: new Date(meetingEndTime.getTime() - 10 * 60 * 1000),
-            $lte: new Date(meetingEndTime.getTime() + 10 * 60 * 1000)
-          }
-        },
-        // Or if processed very recently (within last 2 minutes) regardless of meeting end time
-        {
-          processedAt: {
-            $gte: new Date(new Date().getTime() - 2 * 60 * 1000)
-          }
-        }
-      ]
+      meetingDate: {
+        $gte: new Date(new Date().getTime() - 30 * 60 * 1000),
+      },
     });
 
-    if (existingProcessing && !existingProcessing.skippedDueToShortDuration) {
-      console.log(
-        `Meeting ${meetingId} was already processed at ${existingProcessing.processedAt}`
-      );
-      console.log(
-        `Time since meeting end: ${
-          (new Date(meetingEndTime) - existingProcessing.processedAt) / (60 * 1000)
-        } minutes`
-      );
-      return;
+    if (existingProcessing) {
+      // If the previous attempt was skipped due to short duration, allow processing
+      if (existingProcessing.skippedDueToShortDuration) {
+        console.log(
+          `Previous attempt was skipped due to short duration. Allowing new processing attempt.`
+        );
+      } else {
+        console.log(
+          `Meeting ${meetingId} was already processed at ${existingProcessing.processedAt}`
+        );
+        console.log(
+          `Time since last processing: ${
+            (new Date() - existingProcessing.processedAt) / (60 * 1000)
+          } minutes`
+        );
+        return;
+      }
     }
 
     // Check duration after deduplication check
-    if (totalDurationMinutes < 10) {
+    if (totalDurationMinutes < 5) {
       console.log(
         `Meeting ${meetingId} duration (${totalDurationMinutes} minutes) is less than 10 minutes. Skipping processing.`
       );
@@ -1262,9 +1126,9 @@ async function handleMeetingParticipantsReport(
     // Find user with Google access token
     const googleUser = await User.findOne({
       $or: [
-        { google: { $exists: true } },
-        { "google.accessToken": { $exists: true } },
-        { "google.refreshToken": { $exists: true } },
+        { googleId: { $exists: true } },
+        { accessToken: { $exists: true } },
+        { refreshToken: { $exists: true } },
       ],
     });
 
@@ -1274,7 +1138,7 @@ async function handleMeetingParticipantsReport(
       );
     }
 
-    if (!googleUser.google.accessToken && !googleUser.google.refreshToken) {
+    if (!googleUser.accessToken && !googleUser.refreshToken) {
       throw new Error(
         "Google credentials are missing. Please reconnect your Google account."
       );
@@ -1289,19 +1153,19 @@ async function handleMeetingParticipantsReport(
 
     // Set tokens
     oauth2Client.setCredentials({
-      access_token: googleUser.google.accessToken,
-      refresh_token: googleUser.google.refreshToken,
+      access_token: googleUser.accessToken,
+      refresh_token: googleUser.refreshToken,
     });
 
     // Validate current access token
     let isAuthenticated = false;
-    if (googleUser.google.accessToken) {
+    if (googleUser.accessToken) {
       console.log("Validating Google access token...");
-      isAuthenticated = await validateGoogleToken(googleUser.google.accessToken);
+      isAuthenticated = await validateGoogleToken(googleUser.accessToken);
     }
 
     // If access token is invalid and we have a refresh token, try refreshing
-    if (!isAuthenticated && googleUser.google.refreshToken) {
+    if (!isAuthenticated && googleUser.refreshToken) {
       console.log("Access token invalid, attempting to refresh...");
       isAuthenticated = await refreshGoogleToken(oauth2Client, googleUser);
     }
@@ -1316,7 +1180,7 @@ async function handleMeetingParticipantsReport(
 
     // Find or create the main spreadsheet
     console.log("Finding or creating main spreadsheet...");
-    const spreadsheetId = await findOrCreateSpreadsheet(oauth2Client, googleUser);
+    await findOrCreateSpreadsheet(oauth2Client);
 
     // Create sheet for this meeting
     console.log(`Creating sheet for meeting: ${meetingConfig.name}`);
@@ -1328,8 +1192,7 @@ async function handleMeetingParticipantsReport(
       oauth2Client,
       meetingConfig.name,
       processedCsvFilePath,
-      meetingDetails.startTime,
-      meetingConfig
+      meetingDetails.startTime
     );
 
     // Apply conditional formatting

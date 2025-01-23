@@ -1,0 +1,485 @@
+Attempting Redis connection (Attempt 1)
+Listening on port 5501!
+Redis Client Ready
+Connected to Redis successfully!
+MongoDB connected
+Connected to MongoDB successfully
+Hello My creator
+Webhook headers: {
+  connection: 'upgrade',
+  host: 'tech-track.rubikamp.org',
+  'x-real-ip': '134.224.12.55',
+  'x-forwarded-for': '134.224.12.55',
+  'x-forwarded-proto': 'https',
+  'x-forwarded-host': 'tech-track.rubikamp.org',
+  'content-length': '351',
+  authorization: 'Basic cnViaWthbXBpcmFuQGdtYWlsLmNvbTpSdWJpS0BtcDEvMQ==',
+  clientid: 'PdNrt2sJSROp0PiGOKUM7A',
+  'x-zm-trackingid': 'v=2.0;clid=us02;rid=WEB_f4c838ff84ece77af7d2f9f4d24c220d',
+  'x-zoom-retry-num': '3',
+  'x-zoom-retry-reason': 'java.net.SocketTimeoutException:3,000 milliseconds timeout on connection http-outgoing-332037 [ACTIVE]',
+  'x-zm-request-timestamp': '1736103982',
+  'x-zm-signature': 'v0=a2e855cb62af6bfeacb5a575d995dc0807cf80112f84b1297e3d7fdab3eaf0cf',
+  'content-type': 'application/json; charset=utf-8',
+  'user-agent': 'Zoom Marketplace/1.0a'
+}
+Webhook body: {
+  event: 'meeting.ended',
+  payload: {
+    account_id: 'bxX3DhQ-QxKn2-cHaXKOUw',
+    object: {
+      duration: 60,
+      start_time: '2025-01-05T17:04:34Z',
+      timezone: 'America/New_York',
+      end_time: '2025-01-05T17:40:54Z',
+      topic: 'Project Management',
+      id: '84127772942',
+      type: 3,
+      uuid: 'bDmLwS5ORdOWMq6f1EP4ew==',
+      host_id: '5QdctaDwQ7qXdfiEMFq5Wg'
+    }
+  },
+  event_ts: 1736098854299
+}
+Meeting ID: 84127772942
+Meeting Details: {
+  duration: 60,
+  startTime: '2025-01-05T17:04:34Z',
+  endTime: '2025-01-05T17:40:54Z',
+  topic: 'Project Management',
+  accountId: 'bxX3DhQ-QxKn2-cHaXKOUw',
+  hostId: '5QdctaDwQ7qXdfiEMFq5Wg'
+}
+Host ID: 5QdctaDwQ7qXdfiEMFq5Wg
+Host user not found, looking for any user with valid Zoom token
+Found user for API access: rubikampiran@gmail.com
+Validating Zoom token for user: new ObjectId('6775a39105f4bc0e4ea6d3e9')
+Token expired or expiring soon, refreshing
+Attempting to refresh Zoom token for user: new ObjectId('6775a39105f4bc0e4ea6d3e9')
+Token refreshed successfully for user: new ObjectId('6775a39105f4bc0e4ea6d3e9')
+Token verified successfully
+Using Zoom token from user: rubikampiran@gmail.com
+Fetching participants for meeting: 84127772942
+Meeting details: {
+  meetingId: '84127772942',
+  userId: new ObjectId('6775a39105f4bc0e4ea6d3e9'),
+  accountId: 'bxX3DhQ-QxKn2-cHaXKOUw',
+  hostId: '5QdctaDwQ7qXdfiEMFq5Wg'
+}
+Requesting participants from URL: https://api.zoom.us/v2/past_meetings/84127772942/participants
+Zoom API Response Headers: Object [AxiosHeaders] {
+  date: 'Sun, 05 Jan 2025 19:06:24 GMT',
+  'content-type': 'application/json;charset=UTF-8',
+  'content-length': '3817',
+  connection: 'close',
+  'x-zm-trackingid': 'v=2.0;clid=us02;rid=WEB_6e23a2b1e43447d3c2e73960eefba3f2',
+  'x-content-type-options': 'nosniff',
+  'cache-control': 'no-cache, no-store, must-revalidate, no-transform',
+  pragma: 'no-cache',
+  expires: 'Thu, 01 Jan 1970 00:00:00 GMT',
+  'set-cookie': [
+    'zm_aid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    'zm_haid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    'zm_tmaid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    'zm_htmaid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    'cred=B3C719094056EB787DE2D51EAC6FAFC1; Path=/; Secure; HttpOnly',
+    '_zm_ctaid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    '_zm_chtaid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain=zoom.us; Path=/; Secure; HttpOnly',
+    '_zm_mtk_guid=fb72c68582544d04bd22cd3f22d19c97; Max-Age=63072000; Expires=Tue, 05 Jan 2027 19:06:24 GMT; Domain=zoom.us; Path=/; Secure',
+    '__cf_bm=CAMbgIJKdwcJW80sWdNW6.Bx9iSgwPG4ZQqJox.0IcY-1736103984-1.0.1.1-1LLpewFHXQKmvbGwuqYpAA5JYjrDV8m2jasEKWRhtFEWDb9WQBBIyoOCrxahT3Qvvvmz1KxxvaLC244KMpzsvg; path=/; expires=Sun, 05-Jan-25 19:36:24 GMT; domain=.zoom.us; HttpOnly; Secure; SameSite=None'
+  ],
+  vary: 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
+  'x-ratelimit-category': 'Light',
+  'x-zm-zoneid': 'VA',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+  'x-xss-protection': '1; mode=block',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'cf-cache-status': 'DYNAMIC',
+  'report-to': '{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=vKifZhVKyGZmlIBWlzmojWZ6jtVkmCuT3Xh0tRRzWGmLVIDRDBdccn8y1u082w8YqwWK1RWphguubL43CunLp6Vd0KVx48dRJGkWNDrpzK0otco2J9vaa5q9Q8eB"}],"group":"cf-nel","max_age":604800}',
+  nel: '{"success_fraction":0.01,"report_to":"cf-nel","max_age":604800}',
+  server: 'cloudflare',
+  'cf-ray': '8fd5becbde5f9b76-FRA',
+  'alt-svc': 'h3=":443"; ma=86400'
+}
+Number of participants: 15
+Meeting 84127772942 duration: 34 minutes. Proceeding with processing.
+Meeting ID to fetch:  84127772942
+from meetinghelper:  {
+  _id: new ObjectId('67792bf506e26d2c64811fbf'),
+  id: 84127772942,
+  name: 'Project Management',
+  delayPercentage: 80,
+  createdAt: 1735990844661,
+  allowTime: 10,
+  __v: 0
+}
+Requesting participants from URL: https://api.zoom.us/v2/past_meetings/84127772942/participants
+Retrieved 15 participants
+Saving JSON file: /app/downloads/84127772942_participants.json
+Processing participants data...
+Received meetingId: 84127772942
+Meeting ID to fetch:  84127772942
+from meetinghelper:  {
+  _id: new ObjectId('67792bf506e26d2c64811fbf'),
+  id: 84127772942,
+  name: 'Project Management',
+  delayPercentage: 80,
+  createdAt: 1735990844661,
+  allowTime: 10,
+  __v: 0
+}
+Allowed time for meeting 84127772942 (Project Management): 10 minutes
+Processing meeting: Project Management (ID: 84127772942)
+Amir Rezapour joined at 2025-01-05T20:34:34+03:30 - 0 minutes after session start
+Mahdi Azadimanesh joined at 2025-01-05T20:46:07+03:30 - 11 minutes after session start
+Fateme Mohamadpour joined at 2025-01-05T20:50:58+03:30 - 16 minutes after session start
+Tasnim razipoor joined at 2025-01-05T20:51:13+03:30 - 16 minutes after session start
+Hosna Ronaghi joined at 2025-01-05T20:51:24+03:30 - 16 minutes after session start
+Mojdeh joined at 2025-01-05T20:56:09+03:30 - 21 minutes after session start
+elena khezri joined at 2025-01-05T20:59:14+03:30 - 24 minutes after session start
+Lena Eghbali joined at 2025-01-05T21:00:00+03:30 - 25 minutes after session start
+Abtin Akbari joined at 2025-01-05T21:00:01+03:30 - 25 minutes after session start
+ش ش joined at 2025-01-05T21:03:13+03:30 - 28 minutes after session start
+Parniya Sadafi joined at 2025-01-05T21:03:57+03:30 - 29 minutes after session start
+ش ش joined at 2025-01-05T21:05:39+03:30 - 31 minutes after session start
+anousha ghafari joined at 2025-01-05T21:06:21+03:30 - 31 minutes after session start
+Komeyl Afkhami joined at 2025-01-05T21:06:23+03:30 - 31 minutes after session start
+Mahdi Azadimanesh joined at 2025-01-05T21:08:05+03:30 - 33 minutes after session start
+Processed data saved to: /app/csvProcessed/processed_84127772942_participants.csv
+Setting up Google OAuth client...
+Validating Google access token...
+Token validation failed: { error_description: 'Invalid Value' }
+Access token invalid, attempting to refresh...
+Google OAuth client setup complete
+Finding or creating main spreadsheet...
+Found Google user: undefined
+Found spreadsheet ID in Google user document: 10Jf17pctLHZb1TeOcuJiFztfu4bsA91saUnet5mQXZY
+Verified existing spreadsheet is accessible
+Creating sheet for meeting: Project Management
+Checking if sheet Project Management exists...
+Sheet Project Management already exists
+Updating attendance data...
+Processing sheet: Project Management
+Date column: Attendance 1403-10-16 - 20:34
+CSV headers: [
+  'id',
+  'name',
+  'user_email',
+  'join_time',
+  'leave_time',
+  'duration',
+  'status',
+  'minuteslate',
+  'islate',
+  'attendancepercentage'
+]
+Total meeting duration: 34
+Processing Amir Rezapour (as amirrezapour): {
+      duration: 34,
+      totalDuration: 34,
+      joinTime: 2025-01-05T20:34:34+03:30,
+      minutesLate: 0,
+      sessions: 1
+    }
+Processing Mahdi Azadimanesh (as mahdiazadimanesh): {
+      duration: 22,
+      totalDuration: 22,
+      joinTime: 2025-01-05T20:46:07+03:30,
+      minutesLate: 11,
+      sessions: 1
+    }
+Processing Fateme Mohamadpour (as fatememohamadpour): {
+      duration: 17,
+      totalDuration: 17,
+      joinTime: 2025-01-05T20:50:58+03:30,
+      minutesLate: 16,
+      sessions: 1
+    }
+Processing Tasnim razipoor (as tasnimrazipoor): {
+      duration: 17,
+      totalDuration: 17,
+      joinTime: 2025-01-05T20:51:13+03:30,
+      minutesLate: 16,
+      sessions: 1
+    }
+Processing Hosna Ronaghi (as hosnaronaghi): {
+      duration: 17,
+      totalDuration: 17,
+      joinTime: 2025-01-05T20:51:24+03:30,
+      minutesLate: 16,
+      sessions: 1
+    }
+Processing Mojdeh (as mojdeh): {
+      duration: 7,
+      totalDuration: 7,
+      joinTime: 2025-01-05T20:56:09+03:30,
+      minutesLate: 21,
+      sessions: 1
+    }
+Processing elena khezri (as elenakhezri): {
+      duration: 10,
+      totalDuration: 10,
+      joinTime: 2025-01-05T20:59:14+03:30,
+      minutesLate: 24,
+      sessions: 1
+    }
+Processing Lena Eghbali (as lenaeghbali): {
+      duration: 9,
+      totalDuration: 9,
+      joinTime: 2025-01-05T21:00:00+03:30,
+      minutesLate: 25,
+      sessions: 1
+    }
+Processing Abtin Akbari (as abtinakbari): {
+      duration: 8,
+      totalDuration: 8,
+      joinTime: 2025-01-05T21:00:01+03:30,
+      minutesLate: 25,
+      sessions: 1
+    }
+Processing ش ش (as amirrezapour): {
+      duration: 1,
+      totalDuration: 35,
+      joinTime: 2025-01-05T21:03:13+03:30,
+      minutesLate: 28,
+      sessions: 2
+    }
+Processing Parniya Sadafi (as parniyasadafi): {
+      duration: 5,
+      totalDuration: 5,
+      joinTime: 2025-01-05T21:03:57+03:30,
+      minutesLate: 29,
+      sessions: 1
+    }
+Processing ش ش (as amirrezapour): {
+      duration: 2,
+      totalDuration: 37,
+      joinTime: 2025-01-05T21:05:39+03:30,
+      minutesLate: 31,
+      sessions: 3
+    }
+Processing anousha ghafari (as anoushaghafari): {
+      duration: 2,
+      totalDuration: 2,
+      joinTime: 2025-01-05T21:06:21+03:30,
+      minutesLate: 31,
+      sessions: 1
+    }
+Processing Komeyl Afkhami (as komeylafkhami): {
+      duration: 2,
+      totalDuration: 2,
+      joinTime: 2025-01-05T21:06:23+03:30,
+      minutesLate: 31,
+      sessions: 1
+    }
+Processing Mahdi Azadimanesh (as mahdiazadimanesh): {
+      duration: 0,
+      totalDuration: 22,
+      joinTime: 2025-01-05T21:08:05+03:30,
+      minutesLate: 33,
+      sessions: 2
+    }
+Amir Rezapour final calculations: {
+      normalizedName: amirrezapour,
+      duration: 37,
+      totalMeetingDuration: 34,
+      attendancePercentage: 100,
+      minutesLate: 0,
+      sessions: 3
+    }
+Mahdi Azadimanesh final calculations: {
+      normalizedName: mahdiazadimanesh,
+      duration: 22,
+      totalMeetingDuration: 34,
+      attendancePercentage: 65,
+      minutesLate: 11,
+      sessions: 2
+    }
+Fateme Mohamadpour final calculations: {
+      normalizedName: fatememohamadpour,
+      duration: 17,
+      totalMeetingDuration: 34,
+      attendancePercentage: 50,
+      minutesLate: 16,
+      sessions: 1
+    }
+Tasnim razipoor final calculations: {
+      normalizedName: tasnimrazipoor,
+      duration: 17,
+      totalMeetingDuration: 34,
+      attendancePercentage: 50,
+      minutesLate: 16,
+      sessions: 1
+    }
+Hosna Ronaghi final calculations: {
+      normalizedName: hosnaronaghi,
+      duration: 17,
+      totalMeetingDuration: 34,
+      attendancePercentage: 50,
+      minutesLate: 16,
+      sessions: 1
+    }
+Mojdeh final calculations: {
+      normalizedName: mojdeh,
+      duration: 7,
+      totalMeetingDuration: 34,
+      attendancePercentage: 21,
+      minutesLate: 21,
+      sessions: 1
+    }
+elena khezri final calculations: {
+      normalizedName: elenakhezri,
+      duration: 10,
+      totalMeetingDuration: 34,
+      attendancePercentage: 29,
+      minutesLate: 24,
+      sessions: 1
+    }
+Lena Eghbali final calculations: {
+      normalizedName: lenaeghbali,
+      duration: 9,
+      totalMeetingDuration: 34,
+      attendancePercentage: 26,
+      minutesLate: 25,
+      sessions: 1
+    }
+Abtin Akbari final calculations: {
+      normalizedName: abtinakbari,
+      duration: 8,
+      totalMeetingDuration: 34,
+      attendancePercentage: 24,
+      minutesLate: 25,
+      sessions: 1
+    }
+Parniya Sadafi final calculations: {
+      normalizedName: parniyasadafi,
+      duration: 5,
+      totalMeetingDuration: 34,
+      attendancePercentage: 15,
+      minutesLate: 29,
+      sessions: 1
+    }
+anousha ghafari final calculations: {
+      normalizedName: anoushaghafari,
+      duration: 2,
+      totalMeetingDuration: 34,
+      attendancePercentage: 6,
+      minutesLate: 31,
+      sessions: 1
+    }
+Komeyl Afkhami final calculations: {
+      normalizedName: komeylafkhami,
+      duration: 2,
+      totalMeetingDuration: 34,
+      attendancePercentage: 6,
+      minutesLate: 31,
+      sessions: 1
+    }
+Processed participants: [
+  {
+    name: 'Amir Rezapour',
+    duration: 37,
+    firstJoinTime: Moment<2025-01-05T20:34:34+03:30>,
+    attendancePercentage: 100,
+    minutesLate: 0,
+    isLate: false
+  },
+  {
+    name: 'Mahdi Azadimanesh',
+    duration: 22,
+    firstJoinTime: Moment<2025-01-05T20:46:07+03:30>,
+    attendancePercentage: 65,
+    minutesLate: 11,
+    isLate: true
+  },
+  {
+    name: 'Fateme Mohamadpour',
+    duration: 17,
+    firstJoinTime: Moment<2025-01-05T20:50:58+03:30>,
+    attendancePercentage: 50,
+    minutesLate: 16,
+    isLate: true
+  },
+  {
+    name: 'Tasnim razipoor',
+    duration: 17,
+    firstJoinTime: Moment<2025-01-05T20:51:13+03:30>,
+    attendancePercentage: 50,
+    minutesLate: 16,
+    isLate: true
+  },
+  {
+    name: 'Hosna Ronaghi',
+    duration: 17,
+    firstJoinTime: Moment<2025-01-05T20:51:24+03:30>,
+    attendancePercentage: 50,
+    minutesLate: 16,
+    isLate: true
+  },
+  {
+    name: 'Mojdeh',
+    duration: 7,
+    firstJoinTime: Moment<2025-01-05T20:56:09+03:30>,
+    attendancePercentage: 21,
+    minutesLate: 21,
+    isLate: true
+  },
+  {
+    name: 'elena khezri',
+    duration: 10,
+    firstJoinTime: Moment<2025-01-05T20:59:14+03:30>,
+    attendancePercentage: 29,
+    minutesLate: 24,
+    isLate: true
+  },
+  {
+    name: 'Lena Eghbali',
+    duration: 9,
+    firstJoinTime: Moment<2025-01-05T21:00:00+03:30>,
+    attendancePercentage: 26,
+    minutesLate: 25,
+    isLate: true
+  },
+  {
+    name: 'Abtin Akbari',
+    duration: 8,
+    firstJoinTime: Moment<2025-01-05T21:00:01+03:30>,
+    attendancePercentage: 24,
+    minutesLate: 25,
+    isLate: true
+  },
+  {
+    name: 'Parniya Sadafi',
+    duration: 5,
+    firstJoinTime: Moment<2025-01-05T21:03:57+03:30>,
+    attendancePercentage: 15,
+    minutesLate: 29,
+    isLate: true
+  },
+  {
+    name: 'anousha ghafari',
+    duration: 2,
+    firstJoinTime: Moment<2025-01-05T21:06:21+03:30>,
+    attendancePercentage: 6,
+    minutesLate: 31,
+    isLate: true
+  },
+  {
+    name: 'Komeyl Afkhami',
+    duration: 2,
+    firstJoinTime: Moment<2025-01-05T21:06:23+03:30>,
+    attendancePercentage: 6,
+    minutesLate: 31,
+    isLate: true
+  }
+]
+Retrieved rows from sheet: 0
+Extracted student names: 0
+Expected students from sheet: []
+Updated absence counts for sheet: Project Management
+Applying conditional formatting to sheet ID: 32489491
+Conditional formatting applied: {"spreadsheetId":"10Jf17pctLHZb1TeOcuJiFztfu4bsA91saUnet5mQXZY","replies":[{},{}]}
+Applying conditional formatting...
+Applying conditional formatting to sheet ID: 32489491
+Conditional formatting applied: {"spreadsheetId":"10Jf17pctLHZb1TeOcuJiFztfu4bsA91saUnet5mQXZY","replies":[{},{}]}
+Meeting participant report processing completed successfully
