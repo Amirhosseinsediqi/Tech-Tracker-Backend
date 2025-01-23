@@ -3,3 +3,4 @@ node_modules
 utils/credentials.json
 .env
 data/db/journal/*
+docker-compose.yml
